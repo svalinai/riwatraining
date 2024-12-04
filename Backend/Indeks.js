@@ -6,7 +6,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const app = express();
-const port = 3000;
+const port = 4444;
 
 // Enable CORS for frontend-backend communication
 app.use(
