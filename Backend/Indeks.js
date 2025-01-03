@@ -2,7 +2,6 @@ const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
 const mysql = require("mysql");
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const app = express();
@@ -58,34 +57,31 @@ function verifyToken(req, res, next) {
 app.post("/api/register", (req, res) => {
   const { ime, prezime, email, lozinka, uloga } = req.body;
 
+  // Provjera da li su svi podaci prisutni
   if (!ime || !prezime || !email || !lozinka || !uloga) {
     return res.status(400).json({ message: "All fields are required!" });
   }
 
-  bcrypt.hash(lozinka, 10, (err, hashedLozinka) => {
-    if (err) {
-      return res.status(500).json({ message: "Error hashing password." });
-    }
+  // SQL upit za unos korisnika u bazu podataka
+  const query = `
+    INSERT INTO Korisnici (ime, prezime, email, lozinka, uloga)
+    VALUES (?, ?, ?, ?, ?)
+  `;
+  const values = [ime, prezime, email, lozinka, uloga];
 
-    const query = `
-      INSERT INTO Korisnici (ime, prezime, email, lozinka, uloga)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    const values = [ime, prezime, email, hashedLozinka, uloga];
-
-    connection.query(query, values, (error, results) => {
-      if (error) {
-        console.error("Registration error:", error);
-        if (error.code === "ER_DUP_ENTRY") {
-          return res.status(400).json({ message: "Email already exists!" });
-        }
-        return res.status(500).json({ message: "Server error." });
+  connection.query(query, values, (error, results) => {
+    if (error) {
+      console.error("Registration error:", error);
+      if (error.code === "ER_DUP_ENTRY") {
+        return res.status(400).json({ message: "Email already exists!" });
       }
-      res.status(201).json({ message: "User successfully registered!" });
-    });
+      return res.status(500).json({ message: "Server error." });
+    }
+    res.status(201).json({ message: "User successfully registered!" });
   });
 });
 
+// Route for user login
 // Route for user login
 app.post("/api/login", (req, res) => {
   const { email, lozinka } = req.body;
@@ -104,39 +100,29 @@ app.post("/api/login", (req, res) => {
 
     const user = results[0];
 
-    bcrypt.compare(lozinka, user.lozinka, (err, isMatch) => {
-      if (err) {
-        return res.status(500).json({ message: "Error comparing password." });
-      }
+    // Proveravamo da li unesena lozinka odgovara onoj u bazi (bez hashiranja)
+    if (user.lozinka !== lozinka) {
+      return res.status(400).json({ message: "Incorrect password" });
+    }
 
-      if (!isMatch) {
-        return res.status(400).json({ message: "Incorrect password" });
-      }
+    // Na osnovu uloge korisnika šaljemo odgovarajući layout
+    let layout;
+    if (user.uloga === "trener") {
+      layout = "AdminLayout"; // Ako je uloga trener, vraćamo AdminLayout
+    } else {
+      layout = "MainLayout"; // Inače vraćamo MainLayout
+    }
 
-      // Generate JWT token
-      const token = jwt.sign(
-        {
-          id: user.id,
-          ime: user.ime,
-          prezime: user.prezime,
-          uloga: user.uloga,
-        },
-        "tajni_kljuc", // Secret key for generating the token (change this to a secure key)
-        { expiresIn: "1h" } // Token expires in 1 hour
-      );
-
-      res.status(200).json({
-        message: "Login successful",
-        token: token, // Send the token to the frontend
-      });
+    // Ako su email i lozinka ispravni, vraća se poruka o uspešnoj prijavi i layout
+    res.status(200).json({
+      message: "Login successful",
+      layout: layout, // Dodajemo layout u odgovor
     });
   });
 });
 
 // Example of a protected route
-app.get("/api/protected", verifyToken, (req, res) => {
-  res.status(200).json({ message: "Access granted", user: req.user });
-});
+
 app.get("/api/vjezbe", (req, res) => {
   const query = "SELECT * FROM Vjezbe"; // SQL upit za dohvat svih vježbi
   connection.query(query, (err, results) => {
